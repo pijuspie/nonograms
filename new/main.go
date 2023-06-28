@@ -22,8 +22,25 @@ type lineProps struct {
 	index  int
 }
 
-func readFile(file string) (cV [][]int, lV [][]int) {
-	d, err := os.ReadFile(file)
+func main() {
+	file := flag.String("file", "input.txt", "input data file name")
+	pins := flag.String("pins", "", "pin initial values 'x:y=1;x:y=1'")
+	flag.Parse()
+
+	cV, lV := readData(*file)
+	t := createTable(len(cV), len(lV), *pins)
+
+	start := time.Now().UnixNano()
+	r, iterations := solve(t, cV, lV)
+	end := time.Now().UnixNano()
+	duration := math.Round(float64(end-start) / 1000000)
+
+	printTable(r, len(cV))
+	fmt.Printf("Iterations: %v, duration: %v ms\r\n", iterations, duration)
+}
+
+func readData(filename string) (cV [][]int, lV [][]int) {
+	d, err := os.ReadFile(filename)
 	if err != nil {
 		log.Fatalf("Failed to read data file, err: %s", err)
 	}
@@ -65,6 +82,44 @@ func readFile(file string) (cV [][]int, lV [][]int) {
 	return
 }
 
+func createTable(w, h int, pins string) []int {
+	t := make([]int, w*h)
+	p := strings.Split(pins, ";")
+
+	for i := 0; i < len(p); i++ {
+		p1 := p[i]
+		if p1 == "" {
+			continue
+		}
+
+		p2 := strings.Split(p1, "=")
+		p3 := strings.Split(p2[0], ":")
+
+		if len(p2) != 2 || len(p3) != 2 {
+			log.Fatal("Invalid pins")
+		}
+
+		v, err := strconv.Atoi(p2[1])
+		if err != nil || (v != 0 && v != 1 && v != 2) {
+			log.Fatal("Invalid pin value")
+		}
+
+		x, err := strconv.Atoi(p3[0])
+		if err != nil || x < 0 || x >= w {
+			log.Fatal("Invalid pin x value")
+		}
+
+		y, err := strconv.Atoi(p3[1])
+		if err != nil || y < 0 || y >= h {
+			log.Fatal("Invalid pin y value")
+		}
+
+		t[w*y+x] = v
+	}
+
+	return t
+}
+
 func printTable(t []int, w int) {
 	var s string
 
@@ -84,24 +139,8 @@ func printTable(t []int, w int) {
 		s += "\r\n"
 	}
 
-	fmt.Println(s)
-}
-
-func main() {
-	file := flag.String("file", "input.txt", "input data file name")
-	flag.Parse()
-
-	cV, lV := readFile(*file)
-	t := make([]int, len(cV)*len(lV))
-
-	start := time.Now().UnixNano()
-	r, iterations := solve(t, cV, lV)
-	end := time.Now().UnixNano()
-	duration := math.Round(float64(end-start) / 1000000)
-
-	printTable(r, len(cV))
-	fmt.Printf("Iterations: %v, duration: %v ms", iterations, duration)
 	fmt.Println()
+	fmt.Println(s)
 }
 
 func solve(t []int, cV, lV [][]int) (r []int, iterations int) {
@@ -113,8 +152,13 @@ func solve(t []int, cV, lV [][]int) (r []int, iterations int) {
 		tasks[i] = i
 	}
 
+	fmt.Println("Starting. Tasks: " + fmt.Sprint(len(tasks)))
+
 	for {
 		iterations++
+		fmt.Printf("%v (%v left)", iterations, len(tasks))
+		fmt.Println()
+
 		task := tasks[0]
 		var l, a []int
 
@@ -124,7 +168,16 @@ func solve(t []int, cV, lV [][]int) (r []int, iterations int) {
 
 			for i := 0; i < w; i++ {
 				if l[i] != a[i] {
-					tasks = append(tasks, h+i)
+					is := false
+					for j := 0; j < len(tasks); j++ {
+						if tasks[j] == h+i {
+							is = true
+						}
+					}
+
+					if !is {
+						tasks = append(tasks, h+i)
+					}
 				}
 			}
 
@@ -140,7 +193,16 @@ func solve(t []int, cV, lV [][]int) (r []int, iterations int) {
 			a = analyze(l, cV[task])
 			for i := 0; i < h; i++ {
 				if l[i] != a[i] {
-					tasks = append(tasks, i)
+					is := false
+					for j := 0; j < len(tasks); j++ {
+						if tasks[j] == i {
+							is = true
+						}
+					}
+
+					if !is {
+						tasks = append(tasks, i)
+					}
 				}
 			}
 
@@ -160,26 +222,10 @@ func solve(t []int, cV, lV [][]int) (r []int, iterations int) {
 func analyze(l, v []int) (r []int) {
 	o := optionsAll(l, v)
 
+	fmt.Println(len(o))
+
 	if len(o) < 1 {
 		log.Fatal("Line cannot be solved")
-	}
-
-	var s int
-	for i := 0; i < len(v); i++ {
-		s += v[i]
-	}
-
-	for i := 0; i < len(o); i++ {
-		var t int
-		for j := 0; j < len(l); j++ {
-			if o[i][j] == FILLED {
-				t++
-			}
-		}
-
-		if t != s {
-			o = append(o[:i], o[i+1:]...)
-		}
 	}
 
 	for i := 0; i < len(l); i++ {
@@ -210,18 +256,31 @@ func optionsAll(l, v []int) (r [][]int) {
 	start.line = append(start.line, l...)
 	t := []*lineProps{start}
 
+	var s int
+	for i := 0; i < len(v); i++ {
+		s += v[i]
+	}
+
 	for {
 		t1 := t[0]
 		o := options(t1)
 
 		if t1.index+1 == len(t1.values) {
 			for i := 0; i < len(o); i++ {
+				var t int
 				for j := 0; j < len(l); j++ {
+					if o[i].line[j] == FILLED {
+						t++
+					}
+
 					if o[i].line[j] == UNKNOWN {
 						o[i].line[j] = EMPTY
 					}
 				}
-				r = append(r, o[i].line)
+
+				if t == s {
+					r = append(r, o[i].line)
+				}
 			}
 		} else {
 			for i := 0; i < len(o); i++ {

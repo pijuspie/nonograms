@@ -1,4 +1,4 @@
-# nonograms
+# Nonograms
 
 A tool for solving nonograms
 
